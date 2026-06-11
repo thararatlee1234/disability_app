@@ -16,6 +16,7 @@ class Person {
   final String? latitude;
   final String? longitude;
   final String mapUrl;
+  final bool isGeocoded;
   final String? photo;
   final String notes;
   final Map<String, dynamic> rawData;
@@ -36,6 +37,7 @@ class Person {
     this.latitude,
     this.longitude,
     required this.mapUrl,
+    this.isGeocoded = false,
     this.photo,
     required this.notes,
     required this.rawData,
@@ -63,6 +65,7 @@ class Person {
       latitude: json['latitude']?.toString(),
       longitude: json['longitude']?.toString(),
       mapUrl: json['map_url'] ?? '',
+      isGeocoded: json['is_geocoded'] ?? false,
       photo: photoUrl,
       notes: json['notes'] ?? '',
       rawData: json['raw_data'] ?? {},

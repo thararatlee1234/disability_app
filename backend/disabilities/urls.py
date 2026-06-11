@@ -1,6 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from django.urls import path, include
-from .views import MedicalCheckViewSet, PersonViewSet, stats, import_excel_view, download_template
+from .views import MedicalCheckViewSet, PersonViewSet, stats, import_excel_view, download_template, export_excel_view
 
 router = DefaultRouter()
 router.register('persons', PersonViewSet, basename='persons')
@@ -10,4 +10,5 @@ urlpatterns = [
     path('stats/', stats),
     path('import-excel/', import_excel_view),
     path('download-template/', download_template),
+    path('export-excel/', export_excel_view),
 ]

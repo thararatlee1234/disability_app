@@ -204,13 +204,32 @@ def import_excel(file_or_path, sheet_name=None, exclude_columns=None, owner=None
 
         # Try to extract from map_url if still missing
         if (latitude is None or longitude is None) and map_url:
-            # Simple extraction regex
-            m = re.search(r'@([-\d.]+),([-\d.]+)', map_url)
-            if not m:
-                m = re.search(r'query=([-\d.]+),([-\d.]+)', map_url)
-            if m:
-                latitude = latitude or dec(m.group(1))
-                longitude = longitude or dec(m.group(2))
+            # 1. Prioritize !3d (lat) and !4d (lng)
+            m_pin = re.search(r'!3d([-\d.]+)!4d([-\d.]+)', map_url)
+            if m_pin:
+                latitude = latitude or dec(m_pin.group(1))
+                longitude = longitude or dec(m_pin.group(2))
+            
+            if latitude is None:
+                # 2. Look for @lat,lng
+                m_at = re.search(r'@([-\d.]+),([-\d.]+)', map_url)
+                if m_at:
+                    latitude = latitude or dec(m_at.group(1))
+                    longitude = longitude or dec(m_at.group(2))
+
+            if latitude is None:
+                # 3. Look for query=lat,lng or q=lat,lng or ll=lat,lng
+                m_q = re.search(r'[?&](?:query|q|ll)=([-\d.]+),([-\d.]+)', map_url)
+                if m_q:
+                    latitude = latitude or dec(m_q.group(1))
+                    longitude = longitude or dec(m_q.group(2))
+
+            if latitude is None:
+                # 4. Look for place/lat,lng or search/lat,lng
+                m_place = re.search(r'(?:place|search)/([-\d.]+),([-\d.]+)', map_url)
+                if m_place:
+                    latitude = latitude or dec(m_place.group(1))
+                    longitude = longitude or dec(m_place.group(2))
 
         payload = dict(
             prefix=prefix,

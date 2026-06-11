@@ -17,6 +17,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   LatLng? _currentCenter;
   final MapController _mapController = MapController();
   final FocusNode _focusNode = FocusNode();
+  bool _isSatellite = false;
 
   @override
   void initState() {
@@ -68,6 +69,11 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
         appBar: AppBar(
           title: const Text('ลากแผนที่เพื่อปักหมุด'),
           actions: [
+            IconButton(
+              icon: Icon(_isSatellite ? Icons.map : Icons.satellite_alt),
+              onPressed: () => setState(() => _isSatellite = !_isSatellite),
+              tooltip: _isSatellite ? 'สลับเป็นแผนที่ปกติ' : 'สลับเป็นภาพถ่ายดาวเทียม',
+            ),
             TextButton(
               onPressed: _confirmSelection,
               child: const Text('ยืนยัน', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -87,7 +93,9 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               ),
               children: [
                 TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  urlTemplate: _isSatellite 
+                    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.example.disability_app',
                 ),
               ],

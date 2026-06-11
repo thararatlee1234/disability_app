@@ -48,10 +48,11 @@ class ApiService {
     currentUsername = null;
   }
 
-  Future<List<Person>> fetchPersons({String search = '', String citizenId = ''}) async {
+  Future<List<Person>> fetchPersons({String search = '', String citizenId = '', bool all = false}) async {
     final queryParams = <String, String>{};
     if (search.isNotEmpty) queryParams['search'] = search;
     if (citizenId.isNotEmpty) queryParams['citizen_id'] = citizenId;
+    if (all) queryParams['all'] = 'true';
 
     final uri = Uri.parse('$baseUrl/persons/')
         .replace(queryParameters: queryParams.isEmpty ? null : queryParams);
@@ -262,6 +263,15 @@ class ApiService {
         headers: _authHeaders);
     if (res.statusCode != 200) {
       throw Exception('ดาวน์โหลดเทมเพลตไม่สำเร็จ: ${res.statusCode}');
+    }
+    return res.bodyBytes;
+  }
+
+  Future<Uint8List> downloadReport() async {
+    final res = await http.get(Uri.parse('$baseUrl/export-excel/'),
+        headers: _authHeaders);
+    if (res.statusCode != 200) {
+      throw Exception('ดาวน์โหลดรายงานไม่สำเร็จ: ${res.statusCode}');
     }
     return res.bodyBytes;
   }

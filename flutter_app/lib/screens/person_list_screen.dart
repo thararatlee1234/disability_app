@@ -13,6 +13,7 @@ import '../services/api_service.dart';
 import '../utils/file_download.dart';
 import 'login_screen.dart';
 import 'person_detail_screen.dart';
+import 'all_persons_map_screen.dart';
 
 class PersonListScreen extends StatefulWidget {
   const PersonListScreen({super.key});
@@ -185,6 +186,39 @@ class _PersonListScreenState extends State<PersonListScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('ดาวน์โหลดไม่สำเร็จ: $e')));
+      }
+    }
+  }
+
+  Future<void> _downloadReport() async {
+    try {
+      final bytes = await api.downloadReport();
+      final now = DateTime.now();
+      final dateStr = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+      final fileName = 'disability_report_$dateStr.xlsx';
+      
+      if (kIsWeb) {
+        await downloadBytes(
+          bytes: bytes,
+          fileName: fileName,
+          mimeType:
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+      } else {
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/$fileName');
+        await file.writeAsBytes(bytes);
+        await OpenFilex.open(file.path);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ดาวน์โหลดรายงานสำเร็จ')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('ดาวน์โหลดรายงานไม่สำเร็จ: $e')));
       }
     }
   }
@@ -490,6 +524,9 @@ class _PersonListScreenState extends State<PersonListScreen> {
               if (value == 'template') {
                 _downloadTemplate();
               }
+              if (value == 'export') {
+                _downloadReport();
+              }
             },
             tooltip: 'เมนูเพิ่มเติม',
             itemBuilder: (context) => [
@@ -499,6 +536,14 @@ class _PersonListScreenState extends State<PersonListScreen> {
                   Icon(Icons.upload_file, color: Colors.teal),
                   SizedBox(width: 8),
                   Text('นำเข้า Excel')
+                ]),
+              ),
+              const PopupMenuItem(
+                value: 'export',
+                child: Row(children: [
+                  Icon(Icons.download_for_offline, color: Colors.teal),
+                  SizedBox(width: 8),
+                  Text('ดึงรายงาน Excel')
                 ]),
               ),
               const PopupMenuItem(
@@ -553,6 +598,21 @@ class _PersonListScreenState extends State<PersonListScreen> {
               onPressed: search,
               icon: const Icon(Icons.search),
               label: const Text('ค้นหา'),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AllPersonsMapScreen(),
+                  ),
+                );
+                search(); // Refresh main list when returning from map
+              },
+              icon: const Icon(Icons.map),
+              tooltip: 'ดูแผนที่รวม',
+              style: IconButton.styleFrom(backgroundColor: Colors.teal),
             ),
           ]),
         ),

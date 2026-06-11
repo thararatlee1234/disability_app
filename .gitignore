@@ -4,3 +4,4 @@ backend/.env
 **/__pycache__/
 flutter_app/.dart_tool/
 flutter_app/build/
+backup_*/

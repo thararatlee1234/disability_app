@@ -30,6 +30,13 @@ class PersonViewSet(viewsets.ModelViewSet):
             qs = qs.filter(Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(citizen_id__icontains=search) | Q(phone__icontains=search))
         return qs
 
+    def list(self, request, *args, **kwargs):
+        if request.query_params.get('all') == 'true':
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
+        return super().list(request, *args, **kwargs)
+
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
@@ -96,5 +103,46 @@ def download_template(request):
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
     response['Content-Disposition'] = 'attachment; filename="template_disability.xlsx"'
+    wb.save(response)
+    return response
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def export_excel_view(request):
+    persons = PersonWithDisability.objects.filter(owner=request.user).order_by('first_name', 'last_name').prefetch_related('medical_checks')
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Report"
+    
+    headers = [
+        'ID', 'เลขบัตรประชาชน', 'คำนำหน้า', 'ชื่อ', 'นามสกุล', 'เพศ', 
+        'ประเภทความพิการ', 'โทรศัพท์', 'ที่อยู่ (ดิบ)', 
+        'บ้านเลขที่', 'หมู่ที่', 'หมู่บ้าน', 'ถนน', 
+        'ตำบล', 'อำเภอ', 'จังหวัด', 'รหัสไปรษณีย์',
+        'ละติจูด', 'ลองจิจูด', 'ลิงก์แผนที่', 'หมายเหตุ',
+        'ประวัติการตรวจ (วันที่: รายละเอียด)', 'สร้างเมื่อ', 'แก้ไขล่าสุด'
+    ]
+    ws.append(headers)
+    
+    for p in persons:
+        # Format medical checks
+        checks = p.medical_checks.all()
+        checks_str = "\n".join([f"{c.check_date}: {c.detail}" for c in checks])
+        
+        ws.append([
+            p.id, p.citizen_id, p.prefix, p.first_name, p.last_name, p.gender,
+            p.disability_type, p.phone, p.address,
+            p.house_no, p.village_no, p.village_name, p.road,
+            p.subdistrict, p.district, p.province, p.postal_code,
+            p.latitude, p.longitude, p.map_url, p.notes,
+            checks_str, 
+            p.created_at.replace(tzinfo=None) if p.created_at else '',
+            p.updated_at.replace(tzinfo=None) if p.updated_at else ''
+        ])
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = 'attachment; filename="disability_report_full.xlsx"'
     wb.save(response)
     return response

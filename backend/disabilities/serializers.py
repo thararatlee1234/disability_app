@@ -21,11 +21,17 @@ class CaseInsensitiveTokenObtainPairSerializer(TokenObtainPairSerializer):
 class PersonSerializer(serializers.ModelSerializer):
     full_name = serializers.ReadOnlyField()
     photo = serializers.ImageField(required=False, allow_null=True)
+    is_geocoded = serializers.SerializerMethodField()
     
     class Meta:
         model = PersonWithDisability
         fields = '__all__'
         read_only_fields = ['owner']
+
+    def get_is_geocoded(self, obj):
+        if isinstance(obj.raw_data, dict):
+            return obj.raw_data.get('is_geocoded', False)
+        return False
 
     def validate(self, attrs):
         map_url = attrs.get('map_url')
