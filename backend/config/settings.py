@@ -9,18 +9,19 @@ load_dotenv(BASE_DIR / '.env')
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-prod-key-replace-me')
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True' # Default to True for local development
 
-# Allow ngrok and other hosts
-ALLOWED_HOSTS = ['*'] if DEBUG else os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',')
+# Allow local, ngrok, and PythonAnywhere hosts
+ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,.pythonanywhere.com,*.ngrok-free.app').split(',')
 
-# Trust ngrok origins for CSRF (Fixes 403 Forbidden on login)
+# Trust origins for CSRF
 if DEBUG:
     CSRF_TRUSTED_ORIGINS = [
         'https://*.ngrok-free.app',
+        'https://*.pythonanywhere.com',
         'http://localhost:8000',
         'http://127.0.0.1:8000',
     ]
 else:
-    CSRF_TRUSTED_ORIGINS = os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
+    CSRF_TRUSTED_ORIGINS = os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', 'https://*.pythonanywhere.com').split(',')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -67,7 +68,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# Database configuration for Koyeb/Production
+# Database configuration - Supports SQLite (default) and can be extended to MySQL on PythonAnywhere
 DATABASES = {
     'default': dj_database_url.config(
         default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
@@ -83,6 +84,8 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+# On PythonAnywhere, we usually let their web server handle static files directly, 
+# but WhiteNoise is a good backup and works for the Mobile Web UI locally.
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 MEDIA_URL = '/media/'
