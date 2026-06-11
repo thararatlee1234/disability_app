@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ระบบจัดการผู้ทุพพลภาพ</title>
+    <!-- Use a modern mobile-friendly CSS framework (Bootstrap 5) -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #008080;
+            --secondary-color: #f8f9fa;
+        }
+        body {
+            background-color: #f0f2f5;
+            font-family: 'Sarabun', sans-serif;
+            padding-bottom: 70px; /* Space for bottom nav */
+        }
+        .navbar {
+            background-color: var(--primary-color);
+            color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 15px;
+        }
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            display: flex;
+            justify-content: space-around;
+            padding: 10px 0;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        .nav-item {
+            text-align: center;
+            color: #6c757d;
+            text-decoration: none;
+            font-size: 12px;
+            flex: 1;
+        }
+        .nav-item.active {
+            color: var(--primary-color);
+        }
+        .nav-item i {
+            display: block;
+            font-size: 20px;
+            margin-bottom: 2px;
+        }
+        .search-container {
+            position: sticky;
+            top: 0;
+            z-index: 900;
+            background: #f0f2f5;
+            padding: 15px 10px;
+        }
+        .btn-primary {
+            background-color: var(--primary-color);
+            border: none;
+        }
+        .badge-type {
+            font-size: 0.75rem;
+            padding: 4px 8px;
+            border-radius: 20px;
+            background-color: #e0f2f1;
+            color: var(--primary-color);
+        }
+        .person-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            text-decoration: none;
+            color: inherit;
+        }
+        .person-item:last-child {
+            border-bottom: none;
+        }
+        .avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 25px;
+            background: #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <nav class="navbar px-3 py-2">
+        <span class="navbar-brand mb-0 h1 text-white">ระบบจัดการผู้ทุพพลภาพ</span>
+        <i class="bi bi-person-circle fs-3"></i>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- Search -->
+        <div class="search-container">
+            <div class="input-group">
+                <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
+                <input type="text" id="searchInput" class="form-control border-start-0" placeholder="ค้นหาชื่อ หรือเลขบัตร...">
+            </div>
+        </div>
+
+        <!-- List -->
+        <div class="card p-0 overflow-hidden" id="personList">
+            <!-- Items will be injected here -->
+            <div class="text-center p-5" id="loading">
+                <div class="spinner-border text-teal" role="status"></div>
+                <p class="mt-2">กำลังโหลดข้อมูล...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="bottom-nav">
+        <a href="#" class="nav-item active">
+            <i class="bi bi-house-door-fill"></i> หน้าหลัก
+        </a>
+        <a href="/admin/" class="nav-item">
+            <i class="bi bi-gear"></i> จัดการข้อมูล
+        </a>
+        <a href="#" class="nav-item" id="logoutBtn">
+            <i class="bi bi-box-arrow-right"></i> ออกจากระบบ
+        </a>
+    </div>
+
+    <script>
+        // Use the existing API
+        const API_BASE = '/api';
+        let accessToken = localStorage.getItem('access_token');
+
+        if (!accessToken) {
+            // Simple redirect to login if not authenticated (or handle with Django login)
+            // window.location.href = '/admin/login/'; 
+        }
+
+        async function fetchPersons(search = '') {
+            try {
+                const response = await fetch(`${API_BASE}/persons/?search=${search}`, {
+                    headers: {
+                        'Authorization': accessToken ? `Bearer ${accessToken}` : ''
+                    }
+                });
+                if (response.status === 401) {
+                     window.location.href = '/admin/login/?next=' + window.location.pathname;
+                     return;
+                }
+                const data = await response.json();
+                renderList(data.results || data);
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('personList').innerHTML = '<div class="p-3 text-center text-danger">เกิดข้อผิดพลาดในการโหลดข้อมูล</div>';
+            }
+        }
+
+        function renderList(persons) {
+            const list = document.getElementById('personList');
+            if (persons.length === 0) {
+                list.innerHTML = '<div class="p-4 text-center">ไม่พบข้อมูล</div>';
+                return;
+            }
+
+            list.innerHTML = persons.map(p => `
+                <a href="/admin/disabilities/personwithdisability/${p.id}/change/" class="person-item">
+                    <div class="avatar">
+                        ${p.photo ? `<img src="${p.photo}" class="w-100 h-100 rounded-circle" style="object-fit: cover;">` : '<i class="bi bi-person fs-3"></i>'}
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="fw-bold">${p.full_name}</div>
+                        <div class="text-muted small">${p.citizen_id}</div>
+                        <span class="badge-type">${p.disability_type || 'ไม่ระบุประเภท'}</span>
+                    </div>
+                    <i class="bi bi-chevron-right text-muted"></i>
+                </a>
+            `).join('');
+        }
+
+        // Search event
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            fetchPersons(e.target.value);
+        });
+
+        // Initial load
+        fetchPersons();
+    </script>
+</body>
+</html>

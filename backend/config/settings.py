@@ -7,8 +7,20 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-prod-key-replace-me')
-DEBUG = os.getenv('DJANGO_DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',')
+DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True' # Default to True for local development
+
+# Allow ngrok and other hosts
+ALLOWED_HOSTS = ['*'] if DEBUG else os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',')
+
+# Trust ngrok origins for CSRF (Fixes 403 Forbidden on login)
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://*.ngrok-free.app',
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+    ]
+else:
+    CSRF_TRUSTED_ORIGINS = os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
 
 INSTALLED_APPS = [
     'django.contrib.admin',

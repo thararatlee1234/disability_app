@@ -1,3 +1,4 @@
+from django.shortcuts import render
 from django.http import HttpResponse
 from openpyxl import Workbook
 from django.db.models import Count, Q
@@ -9,6 +10,8 @@ from .models import MedicalCheck, PersonWithDisability
 from .serializers import CaseInsensitiveTokenObtainPairSerializer, MedicalCheckSerializer, PersonSerializer
 from .importer import import_excel
 
+def index(request):
+    return render(request, 'disabilities/index.html')
 
 class CaseInsensitiveTokenObtainPairView(TokenObtainPairView):
     serializer_class = CaseInsensitiveTokenObtainPairSerializer
