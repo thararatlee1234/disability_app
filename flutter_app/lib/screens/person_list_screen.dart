@@ -507,6 +507,21 @@ class _PersonListScreenState extends State<PersonListScreen> {
                 }
 
                 try {
+                  dynamic finalLat = latCtrl.text.trim();
+                  dynamic finalLng = lngCtrl.text.trim();
+                  
+                  if (finalLat.isNotEmpty) {
+                    try { finalLat = double.parse(double.parse(finalLat).toStringAsFixed(10)); } catch (_) {}
+                  } else {
+                    finalLat = null;
+                  }
+                  
+                  if (finalLng.isNotEmpty) {
+                    try { finalLng = double.parse(double.parse(finalLng).toStringAsFixed(10)); } catch (_) {}
+                  } else {
+                    finalLng = null;
+                  }
+
                   final payload = {
                     'prefix': prefixCtrl.text,
                     'first_name': firstCtrl.text,
@@ -515,8 +530,8 @@ class _PersonListScreenState extends State<PersonListScreen> {
                     'phone': phoneCtrl.text,
                     'disability_type': typeCtrl.text,
                     'map_url': mapUrlCtrl.text,
-                    'latitude': latCtrl.text,
-                    'longitude': lngCtrl.text,
+                    'latitude': finalLat,
+                    'longitude': finalLng,
                     'notes': notesCtrl.text,
                   };
 

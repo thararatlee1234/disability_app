@@ -63,9 +63,16 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       if (key == 'map_url' && value.isNotEmpty) {
         final coords = _extractCoords(value);
         if (coords != null) {
-          data['latitude'] = coords.latitude.toString();
-          data['longitude'] = coords.longitude.toString();
+          data['latitude'] = double.parse(coords.latitude.toStringAsFixed(10));
+          data['longitude'] = double.parse(coords.longitude.toStringAsFixed(10));
         }
+      }
+
+      // Round if editing lat/lng directly
+      if ((key == 'latitude' || key == 'longitude') && value.isNotEmpty) {
+        try {
+          data[key] = double.parse(double.parse(value).toStringAsFixed(10));
+        } catch (_) {}
       }
 
       final updated = await api.updatePerson(person.id, data);
@@ -127,10 +134,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     );
 
     if (picked != null) {
+      final lat = double.parse(picked.latitude.toStringAsFixed(10));
+      final lng = double.parse(picked.longitude.toStringAsFixed(10));
       await _updateFields({
-        'latitude': picked.latitude.toString(),
-        'longitude': picked.longitude.toString(),
-        'map_url': 'https://www.google.com/maps/search/?api=1&query=${picked.latitude},${picked.longitude}',
+        'latitude': lat,
+        'longitude': lng,
+        'map_url': 'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
       });
     }
   }
@@ -150,8 +159,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
     if (confirm == true) {
       await _updateFields({
-        'latitude': '',
-        'longitude': '',
+        'latitude': null,
+        'longitude': null,
         'map_url': '',
       });
     }

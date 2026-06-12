@@ -31,6 +31,36 @@ class ApiService {
     return token == null ? {} : {'Authorization': 'Bearer $token'};
   }
 
+  dynamic _handleResponse(http.Response res) {
+    if (res.statusCode == 401) {
+      logout();
+      throw Exception('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+    }
+    
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      if (res.bodyBytes.isEmpty) return null;
+      return jsonDecode(utf8.decode(res.bodyBytes));
+    }
+
+    String message = 'เกิดข้อผิดพลาด: ${res.statusCode}';
+    try {
+      final body = jsonDecode(utf8.decode(res.bodyBytes));
+      if (body is Map) {
+        if (body['detail'] != null) {
+          message = body['detail'].toString();
+        } else if (body.isNotEmpty) {
+          // Handle field-specific validation errors from DRF
+          final errors = <String>[];
+          body.forEach((key, value) {
+            errors.add('$key: $value');
+          });
+          message = errors.join(', ');
+        }
+      }
+    } catch (_) {}
+    throw Exception(message);
+  }
+
   Future<void> login(String username, String password) async {
     final res = await http.post(
       Uri.parse('$baseUrl/token/'),
@@ -39,15 +69,12 @@ class ApiService {
     );
     if (res.statusCode != 200) {
       String message = 'เข้าสู่ระบบไม่สำเร็จ';
-      final text = utf8.decode(res.bodyBytes);
       try {
-        final body = jsonDecode(text);
+        final body = jsonDecode(utf8.decode(res.bodyBytes));
         if (body is Map && body['detail'] != null) {
           message = body['detail'].toString();
         }
-      } catch (_) {
-        // Keep the generic login message when the server returns non-JSON.
-      }
+      } catch (_) {}
       throw Exception(message);
     }
     final body = jsonDecode(utf8.decode(res.bodyBytes));
@@ -85,14 +112,7 @@ class ApiService {
     final uri = Uri.parse('$baseUrl/persons/')
         .replace(queryParameters: queryParams.isEmpty ? null : queryParams);
     final res = await http.get(uri, headers: _authHeaders);
-    if (res.statusCode == 401) {
-      logout();
-      throw Exception('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
-    }
-    if (res.statusCode != 200) {
-      throw Exception('โหลดข้อมูลไม่สำเร็จ: ${res.statusCode}');
-    }
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _handleResponse(res);
     final list = body is Map && body.containsKey('results')
         ? body['results'] as List
         : body as List;
@@ -102,10 +122,7 @@ class ApiService {
   Future<Person> fetchPerson(int id) async {
     final uri = Uri.parse('$baseUrl/persons/$id/');
     final res = await http.get(uri, headers: _authHeaders);
-    if (res.statusCode != 200) {
-      throw Exception('โหลดข้อมูลไม่สำเร็จ: ${res.statusCode}');
-    }
-    return Person.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    return Person.fromJson(_handleResponse(res));
   }
 
   Future<Person?> findByCitizenId(String citizenId) async {
@@ -118,6 +135,16 @@ class ApiService {
   Future<Person> createPerson(Map<String, dynamic> data,
       {Uint8List? imageBytes, String? fileName}) async {
     final uri = Uri.parse('$baseUrl/persons/');
+    
+    if (imageBytes == null) {
+      final res = await http.post(
+        uri,
+        headers: {..._authHeaders, 'Content-Type': 'application/json'},
+        body: jsonEncode(data),
+      );
+      return Person.fromJson(_handleResponse(res));
+    }
+
     var request = http.MultipartRequest('POST', uri);
     request.headers.addAll(_authHeaders);
 
@@ -125,27 +152,31 @@ class ApiService {
       request.fields[key] = value?.toString() ?? '';
     });
 
-    if (imageBytes != null) {
-      request.files.add(http.MultipartFile.fromBytes(
-        'photo',
-        imageBytes,
-        filename: fileName ?? 'photo.jpg',
-        contentType: MediaType('image', 'jpeg'),
-      ));
-    }
+    request.files.add(http.MultipartFile.fromBytes(
+      'photo',
+      imageBytes,
+      filename: fileName ?? 'photo.jpg',
+      contentType: MediaType('image', 'jpeg'),
+    ));
 
     final streamedRes = await request.send();
     final res = await http.Response.fromStream(streamedRes);
-
-    if (res.statusCode != 201) {
-      throw Exception('เพิ่มข้อมูลไม่สำเร็จ: ${res.statusCode}');
-    }
-    return Person.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    return Person.fromJson(_handleResponse(res));
   }
 
   Future<Person> updatePerson(int id, Map<String, dynamic> data,
       {Uint8List? imageBytes, String? fileName}) async {
     final uri = Uri.parse('$baseUrl/persons/$id/');
+
+    if (imageBytes == null) {
+      final res = await http.patch(
+        uri,
+        headers: {..._authHeaders, 'Content-Type': 'application/json'},
+        body: jsonEncode(data),
+      );
+      return Person.fromJson(_handleResponse(res));
+    }
+
     var request = http.MultipartRequest('PATCH', uri);
     request.headers.addAll(_authHeaders);
 
@@ -153,49 +184,35 @@ class ApiService {
       request.fields[key] = value?.toString() ?? '';
     });
 
-    if (imageBytes != null) {
-      request.files.add(http.MultipartFile.fromBytes(
-        'photo',
-        imageBytes,
-        filename: fileName ?? 'photo.jpg',
-        contentType: MediaType('image', 'jpeg'),
-      ));
-    }
+    request.files.add(http.MultipartFile.fromBytes(
+      'photo',
+      imageBytes,
+      filename: fileName ?? 'photo.jpg',
+      contentType: MediaType('image', 'jpeg'),
+    ));
 
     final streamedRes = await request.send();
     final res = await http.Response.fromStream(streamedRes);
-
-    if (res.statusCode != 200) {
-      throw Exception('แก้ไขข้อมูลไม่สำเร็จ: ${res.statusCode}');
-    }
-    return Person.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    return Person.fromJson(_handleResponse(res));
   }
 
   Future<void> deletePerson(int id) async {
     final res = await http.delete(Uri.parse('$baseUrl/persons/$id/'),
         headers: _authHeaders);
-    if (res.statusCode != 204 && res.statusCode != 404) {
-      throw Exception('ลบข้อมูลไม่สำเร็จ: ${res.statusCode}');
-    }
+    _handleResponse(res);
   }
 
   Future<Map<String, dynamic>> fetchStats() async {
     final res =
         await http.get(Uri.parse('$baseUrl/stats/'), headers: _authHeaders);
-    if (res.statusCode != 200) {
-      throw Exception('โหลดสรุปไม่สำเร็จ');
-    }
-    return jsonDecode(utf8.decode(res.bodyBytes));
+    return _handleResponse(res);
   }
 
   Future<List<MedicalCheck>> fetchMedicalChecks(int personId) async {
     final uri = Uri.parse('$baseUrl/checks/')
         .replace(queryParameters: {'person': personId.toString()});
     final res = await http.get(uri, headers: _authHeaders);
-    if (res.statusCode != 200) {
-      throw Exception('โหลดผลตรวจไม่สำเร็จ: ${res.statusCode}');
-    }
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _handleResponse(res);
     final list = body is Map && body.containsKey('results')
         ? body['results'] as List
         : body as List;
@@ -208,6 +225,16 @@ class ApiService {
     List<String> fileNames = const [],
   }) async {
     final uri = Uri.parse('$baseUrl/checks/');
+    
+    if (photoBytes.isEmpty) {
+      final res = await http.post(
+        uri,
+        headers: {..._authHeaders, 'Content-Type': 'application/json'},
+        body: jsonEncode(data),
+      );
+      return MedicalCheck.fromJson(_handleResponse(res));
+    }
+
     final request = http.MultipartRequest('POST', uri);
     request.headers.addAll(_authHeaders);
 
@@ -226,10 +253,7 @@ class ApiService {
 
     final streamedRes = await request.send();
     final res = await http.Response.fromStream(streamedRes);
-    if (res.statusCode != 201) {
-      throw Exception('เพิ่มผลตรวจไม่สำเร็จ: ${res.statusCode}');
-    }
-    return MedicalCheck.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    return MedicalCheck.fromJson(_handleResponse(res));
   }
 
   Future<MedicalCheck> updateMedicalCheck(
@@ -239,6 +263,16 @@ class ApiService {
     List<String> fileNames = const [],
   }) async {
     final uri = Uri.parse('$baseUrl/checks/$id/');
+
+    if (photoBytes.isEmpty) {
+      final res = await http.patch(
+        uri,
+        headers: {..._authHeaders, 'Content-Type': 'application/json'},
+        body: jsonEncode(data),
+      );
+      return MedicalCheck.fromJson(_handleResponse(res));
+    }
+
     final request = http.MultipartRequest('PATCH', uri);
     request.headers.addAll(_authHeaders);
 
@@ -257,18 +291,13 @@ class ApiService {
 
     final streamedRes = await request.send();
     final res = await http.Response.fromStream(streamedRes);
-    if (res.statusCode != 200) {
-      throw Exception('แก้ไขผลตรวจไม่สำเร็จ: ${res.statusCode}');
-    }
-    return MedicalCheck.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    return MedicalCheck.fromJson(_handleResponse(res));
   }
 
   Future<void> deleteMedicalCheck(int id) async {
     final res = await http.delete(Uri.parse('$baseUrl/checks/$id/'),
         headers: _authHeaders);
-    if (res.statusCode != 204 && res.statusCode != 404) {
-      throw Exception('ลบผลตรวจไม่สำเร็จ: ${res.statusCode}');
-    }
+    _handleResponse(res);
   }
 
   Future<Map<String, dynamic>> importExcel(
@@ -285,23 +314,16 @@ class ApiService {
     ));
     final streamedRes = await request.send();
     final res = await http.Response.fromStream(streamedRes);
-    if (res.statusCode != 200) {
-      final text = utf8.decode(res.bodyBytes);
-      String message = 'นำเข้าข้อมูลไม่สำเร็จ: ${res.statusCode}';
-      try {
-        final body = jsonDecode(text);
-        message = body['detail'] ?? message;
-      } catch (_) {
-        // Keep the generic status message when the server returns non-JSON.
-      }
-      throw Exception(message);
-    }
-    return jsonDecode(utf8.decode(res.bodyBytes));
+    return _handleResponse(res);
   }
 
   Future<Uint8List> downloadTemplate() async {
     final res = await http.get(Uri.parse('$baseUrl/download-template/'),
         headers: _authHeaders);
+    if (res.statusCode == 401) {
+      logout();
+      throw Exception('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+    }
     if (res.statusCode != 200) {
       throw Exception('ดาวน์โหลดเทมเพลตไม่สำเร็จ: ${res.statusCode}');
     }
@@ -311,6 +333,10 @@ class ApiService {
   Future<Uint8List> downloadReport() async {
     final res = await http.get(Uri.parse('$baseUrl/export-excel/'),
         headers: _authHeaders);
+    if (res.statusCode == 401) {
+      logout();
+      throw Exception('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+    }
     if (res.statusCode != 200) {
       throw Exception('ดาวน์โหลดรายงานไม่สำเร็จ: ${res.statusCode}');
     }
@@ -321,15 +347,7 @@ class ApiService {
     final uri = Uri.parse('$baseUrl/check-report/')
         .replace(queryParameters: {'start_date': startDate, 'end_date': endDate});
     final res = await http.get(uri, headers: _authHeaders);
-    if (res.statusCode != 200) {
-      String message = 'โหลดรายงานไม่สำเร็จ: ${res.statusCode}';
-      try {
-        final body = jsonDecode(utf8.decode(res.bodyBytes));
-        message = body['detail'] ?? message;
-      } catch (_) {}
-      throw Exception(message);
-    }
-    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final body = _handleResponse(res);
     final checked = (body['checked'] as List).map((e) => Person.fromJson(e)).toList();
     final unchecked = (body['unchecked'] as List).map((e) => Person.fromJson(e)).toList();
     return {'checked': checked, 'unchecked': unchecked};
@@ -339,6 +357,10 @@ class ApiService {
     final uri = Uri.parse('$baseUrl/export-check-report/')
         .replace(queryParameters: {'start_date': startDate, 'end_date': endDate});
     final res = await http.get(uri, headers: _authHeaders);
+    if (res.statusCode == 401) {
+      logout();
+      throw Exception('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+    }
     if (res.statusCode != 200) {
       throw Exception('ดาวน์โหลดรายงานไม่สำเร็จ: ${res.statusCode}');
     }

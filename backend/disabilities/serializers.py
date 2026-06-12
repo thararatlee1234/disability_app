@@ -127,8 +127,21 @@ class PersonSerializer(serializers.ModelSerializer):
             
             if m:
                 if lat is None:
-                    attrs['latitude'] = m.group(1)
+                    lat = m.group(1)
+                    attrs['latitude'] = lat
                 if lng is None:
-                    attrs['longitude'] = m.group(2)
+                    lng = m.group(2)
+                    attrs['longitude'] = lng
+        
+        # Final rounding for DecimalField (max_digits=15, decimal_places=10)
+        from decimal import Decimal, ROUND_HALF_UP
+        if attrs.get('latitude'):
+            try:
+                attrs['latitude'] = Decimal(str(attrs['latitude'])).quantize(Decimal('0.0000000000'), rounding=ROUND_HALF_UP)
+            except: pass
+        if attrs.get('longitude'):
+            try:
+                attrs['longitude'] = Decimal(str(attrs['longitude'])).quantize(Decimal('0.0000000000'), rounding=ROUND_HALF_UP)
+            except: pass
         
         return attrs
