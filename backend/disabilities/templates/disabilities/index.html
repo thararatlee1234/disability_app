@@ -336,8 +336,25 @@
             const zoom = person.latitude ? 16 : 6;
 
             detailMap = L.map('mapContainer').setView([lat, lng], zoom);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            
+            const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap'
+            });
+
+            const googleStreet = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+                attribution: '© Google Maps'
+            });
+
+            const googleSatellite = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+                attribution: '© Google Maps'
+            });
+
+            googleStreet.addTo(detailMap);
+
+            L.control.layers({
+                "Google แผนที่": googleStreet,
+                "Google ดาวเทียม": googleSatellite,
+                "OpenStreetMap": osm,
             }).addTo(detailMap);
 
             detailMarker = L.marker([lat, lng], { draggable: true }).addTo(detailMap);
