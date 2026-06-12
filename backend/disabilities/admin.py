@@ -14,7 +14,38 @@ class PersonAdmin(admin.ModelAdmin):
     list_display = ('full_name', 'owner', 'citizen_id', 'check_status_this_year', 'subdistrict', 'district', 'province', 'phone')
     search_fields = ('first_name', 'last_name', 'citizen_id', 'phone', 'province', 'district', 'subdistrict', 'owner__username')
     list_filter = ('province', 'district', 'subdistrict', 'disability_type')
+    
+    fieldsets = (
+        ('ข้อมูลทั่วไป', {
+            'fields': ('owner', ('prefix', 'first_name', 'last_name'), 'citizen_id', 'gender', 'disability_type', 'photo')
+        }),
+        ('ที่อยู่', {
+            'fields': ('address', ('house_no', 'village_no', 'village_name'), 'road', ('subdistrict', 'district', 'province'), 'postal_code')
+        }),
+        ('พิกัดและแผนที่', {
+            'fields': ('latitude', 'longitude', 'map_url', 'google_maps_link'),
+            'description': 'คลิกในแผนที่เพื่อปักหมุด หรือลากหมุดเพื่อเปลี่ยนตำแหน่ง'
+        }),
+        ('ข้อมูลเพิ่มเติม', {
+            'fields': ('phone', 'notes', 'source_row', 'raw_data')
+        }),
+    )
+    
+    readonly_fields = ('google_maps_link',)
+    
     inlines = [] # Will be set below
+
+    def google_maps_link(self, obj):
+        if obj.map_url:
+            return format_html('<a href="{}" target="_blank">เปิดใน Google Maps ↗️</a>', obj.map_url)
+        if obj.latitude and obj.longitude:
+            url = f"https://www.google.com/maps?q={obj.latitude},{obj.longitude}"
+            return format_html('<a href="{}" target="_blank">เปิดใน Google Maps ↗️</a>', url)
+        return "ยังไม่มีข้อมูลพิกัด"
+    google_maps_link.short_description = 'ลิงก์แผนที่'
+
+    class Media:
+        js = ('disabilities/js/map_picker.js',)
 
     def check_status_this_year(self, obj):
         now = timezone.now()

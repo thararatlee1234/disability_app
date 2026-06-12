@@ -14,7 +14,7 @@ from .serializers import (
 )
 
 def index(request):
-    return redirect('/static/web/index.html')
+    return render(request, 'disabilities/index.html')
 
 class CaseInsensitiveTokenObtainPairView(TokenObtainPairView):
     serializer_class = CaseInsensitiveTokenObtainPairSerializer

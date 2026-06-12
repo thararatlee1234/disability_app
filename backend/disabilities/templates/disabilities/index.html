@@ -95,17 +95,63 @@
             margin-right: 15px;
             flex-shrink: 0;
         }
+        .detail-view {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            z-index: 2000;
+            overflow-y: auto;
+            padding-bottom: 20px;
+        }
+        .detail-header {
+            background: var(--primary-color);
+            color: white;
+            padding: 15px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+        }
+        .detail-content {
+            padding: 20px;
+        }
+        .info-group {
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .info-label {
+            font-size: 12px;
+            color: #6c757d;
+            font-weight: bold;
+        }
+        .info-value {
+            font-size: 16px;
+            color: #212529;
+        }
+        #mapContainer {
+            height: 300px;
+            width: 100%;
+            border-radius: 10px;
+            margin-top: 10px;
+            border: 1px solid #ddd;
+        }
     </style>
 </head>
 <body>
 
     <!-- Header -->
-    <nav class="navbar px-3 py-2">
+    <nav class="navbar px-3 py-2" id="mainHeader">
         <span class="navbar-brand mb-0 h1 text-white">ระบบจัดการผู้ทุพพลภาพ</span>
         <i class="bi bi-person-circle fs-3"></i>
     </nav>
 
-    <div class="container-fluid">
+    <div class="container-fluid" id="mainList">
         <!-- Search -->
         <div class="search-container">
             <div class="input-group">
@@ -124,9 +170,22 @@
         </div>
     </div>
 
+    <!-- Detail View -->
+    <div id="detailView" class="detail-view">
+        <div class="detail-header">
+            <button class="btn text-white p-0 me-3" onclick="closeDetail()">
+                <i class="bi bi-arrow-left fs-3"></i>
+            </button>
+            <h5 class="mb-0">รายละเอียด</h5>
+        </div>
+        <div class="detail-content" id="detailContent">
+            <!-- Detail info injected here -->
+        </div>
+    </div>
+
     <!-- Bottom Navigation -->
     <div class="bottom-nav">
-        <a href="#" class="nav-item active">
+        <a href="#" class="nav-item active" onclick="closeDetail(); return false;">
             <i class="bi bi-house-door-fill"></i> หน้าหลัก
         </a>
         <a href="/admin/" class="nav-item">
@@ -137,15 +196,29 @@
         </a>
     </div>
 
+    <!-- Leaflet for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
     <script>
         // Use the existing API
         const API_BASE = '/api';
         let accessToken = localStorage.getItem('access_token');
-
+        
         if (!accessToken) {
-            // Simple redirect to login if not authenticated (or handle with Django login)
-            // window.location.href = '/admin/login/'; 
+            window.location.href = '/admin/login/?next=' + window.location.pathname;
         }
+
+        document.getElementById('logoutBtn').addEventListener('click', (e) => {
+            e.preventDefault();
+            localStorage.removeItem('access_token');
+            window.location.href = '/admin/logout/?next=/';
+        });
+
+        let currentPersons = [];
+        let selectedPerson = null;
+        let detailMap = null;
+        let detailMarker = null;
 
         async function fetchPersons(search = '') {
             try {
@@ -159,7 +232,8 @@
                      return;
                 }
                 const data = await response.json();
-                renderList(data.results || data);
+                currentPersons = data.results || data;
+                renderList(currentPersons);
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('personList').innerHTML = '<div class="p-3 text-center text-danger">เกิดข้อผิดพลาดในการโหลดข้อมูล</div>';
@@ -174,7 +248,7 @@
             }
 
             list.innerHTML = persons.map(p => `
-                <a href="/admin/disabilities/personwithdisability/${p.id}/change/" class="person-item">
+                <div class="person-item" onclick="showDetail(${p.id})">
                     <div class="avatar">
                         ${p.photo ? `<img src="${p.photo}" class="w-100 h-100 rounded-circle" style="object-fit: cover;">` : '<i class="bi bi-person fs-3"></i>'}
                     </div>
@@ -184,8 +258,200 @@
                         <span class="badge-type">${p.disability_type || 'ไม่ระบุประเภท'}</span>
                     </div>
                     <i class="bi bi-chevron-right text-muted"></i>
-                </a>
+                </div>
             `).join('');
+        }
+
+        function showDetail(id) {
+            const person = currentPersons.find(p => p.id === id);
+            if (!person) return;
+            selectedPerson = person;
+
+            const content = document.getElementById('detailContent');
+            content.innerHTML = `
+                <div class="text-center mb-4">
+                    <div class="avatar mx-auto mb-3" style="width: 100px; height: 100px; border-radius: 50px;">
+                        ${person.photo ? `<img src="${person.photo}" class="w-100 h-100 rounded-circle" style="object-fit: cover;">` : '<i class="bi bi-person fs-1"></i>'}
+                    </div>
+                    <h4 class="fw-bold">${person.full_name}</h4>
+                    <p class="text-muted">${person.citizen_id}</p>
+                </div>
+
+                <div class="card p-3 mb-3">
+                    <div class="info-group">
+                        <div class="info-label">ประเภทความพิการ</div>
+                        <div class="info-value">${person.disability_type || '-'}</div>
+                    </div>
+                    <div class="info-group">
+                        <div class="info-label">ที่อยู่</div>
+                        <div class="info-value">${person.address || '-'} ${person.subdistrict} ${person.district} ${person.province}</div>
+                    </div>
+                    <div class="info-group border-0 pb-0">
+                        <div class="info-label">โทรศัพท์</div>
+                        <div class="info-value">${person.phone || '-'}</div>
+                    </div>
+                </div>
+
+                <div class="card p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0 fw-bold"><i class="bi bi-geo-alt-fill text-danger"></i> พิกัดตำแหน่ง</h6>
+                        <button class="btn btn-sm btn-primary" onclick="openGoogleMaps()">
+                            <i class="bi bi-google"></i> ปักหมุดใน Google Maps
+                        </button>
+                    </div>
+                    <p class="small text-muted mb-2">คลิกที่แผนที่ด้านล่างเพื่อปักหมุด หรือกดปุ่มด้านบนเพื่อเลือกใน Google Maps</p>
+                    <div id="mapContainer"></div>
+                    <div class="mt-3">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label class="small text-muted">ละติจูด</label>
+                                <input type="text" id="det_lat" class="form-control form-control-sm" value="${person.latitude || ''}" readonly>
+                            </div>
+                            <div class="col-6">
+                                <label class="small text-muted">ลองจิจูด</label>
+                                <input type="text" id="det_lng" class="form-control form-control-sm" value="${person.longitude || ''}" readonly>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <label class="small text-muted">ลิงก์ Google Maps</label>
+                            <input type="text" id="det_url" class="form-control form-control-sm" value="${person.map_url || ''}" onchange="updateFromUrl(this.value)">
+                        </div>
+                        <button class="btn btn-success w-100 mt-3" onclick="saveLocation()">
+                            <i class="bi bi-save"></i> บันทึกพิกัด
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('detailView').style.display = 'block';
+            document.body.style.overflow = 'hidden';
+
+            // Initialize Map
+            setTimeout(() => initDetailMap(person), 100);
+        }
+
+        function initDetailMap(person) {
+            const lat = parseFloat(person.latitude) || 13.7563;
+            const lng = parseFloat(person.longitude) || 100.5018;
+            const zoom = person.latitude ? 16 : 6;
+
+            detailMap = L.map('mapContainer').setView([lat, lng], zoom);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap'
+            }).addTo(detailMap);
+
+            detailMarker = L.marker([lat, lng], { draggable: true }).addTo(detailMap);
+
+            detailMarker.on('dragend', function(e) {
+                updateInputs(e.target.getLatLng());
+            });
+
+            detailMap.on('click', function(e) {
+                detailMarker.setLatLng(e.latlng);
+                updateInputs(e.latlng);
+            });
+        }
+
+        function updateInputs(latlng) {
+            const lat = latlng.lat.toFixed(10);
+            const lng = latlng.lng.toFixed(10);
+            document.getElementById('det_lat').value = lat;
+            document.getElementById('det_lng').value = lng;
+            document.getElementById('det_url').value = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+        }
+
+        function updateFromUrl(url) {
+            const coords = extractCoords(url);
+            if (coords) {
+                document.getElementById('det_lat').value = coords.lat;
+                document.getElementById('det_lng').value = coords.lng;
+                const pos = [coords.lat, coords.lng];
+                detailMarker.setLatLng(pos);
+                detailMap.setView(pos, 16);
+            }
+        }
+
+        function extractCoords(url) {
+            const patterns = [
+                /query=([-\d.]+),([-\d.]+)/,
+                /@([-\d.]+),([-\d.]+)/,
+                /[?&]q=([-\d.]+),([-\d.]+)/
+            ];
+            for (let p of patterns) {
+                const match = url.match(p);
+                if (match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+            }
+            return null;
+        }
+
+        function openGoogleMaps() {
+            let url = 'https://www.google.com/maps';
+            const lat = document.getElementById('det_lat').value;
+            const lng = document.getElementById('det_lng').value;
+            if (lat && lng) {
+                url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+            }
+            window.open(url, '_blank');
+            alert('เมื่อปักหมุดใน Google Maps เสร็จแล้ว ให้คัดลอกลิงก์มาวางในช่อง "ลิงก์ Google Maps" แล้วกดบันทึก');
+        }
+
+        async function saveLocation() {
+            const lat = document.getElementById('det_lat').value;
+            const lng = document.getElementById('det_lng').value;
+            const url = document.getElementById('det_url').value;
+
+            try {
+                const response = await fetch(`${API_BASE}/persons/${selectedPerson.id}/`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': accessToken ? `Bearer ${accessToken}` : '',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        latitude: lat,
+                        longitude: lng,
+                        map_url: url
+                    })
+                });
+
+                if (response.ok) {
+                    alert('บันทึกพิกัดเรียบร้อยแล้ว');
+                    selectedPerson.latitude = lat;
+                    selectedPerson.longitude = lng;
+                    selectedPerson.map_url = url;
+                    fetchPersons(); // Refresh list
+                } else {
+                    alert('เกิดข้อผิดพลาดในการบันทึก');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+            }
+        }
+
+        function closeDetail() {
+            document.getElementById('detailView').style.display = 'none';
+            document.body.style.overflow = 'auto';
+            if (detailMap) {
+                detailMap.remove();
+                detailMap = null;
+            }
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
         }
 
         // Search event
@@ -198,3 +464,4 @@
     </script>
 </body>
 </html>
+
