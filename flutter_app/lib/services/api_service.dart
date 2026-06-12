@@ -8,7 +8,7 @@ import '../models/person.dart';
 
 class ApiService {
   static const String serverHost = String.fromEnvironment('SERVER_HOST',
-      defaultValue: kIsWeb ? '' : 'http://127.0.0.1:8000');
+      defaultValue: 'http://127.0.0.1:8000'); // Always default to local backend for dev
   
   static String get baseUrl {
     if (serverHost.isEmpty) {
