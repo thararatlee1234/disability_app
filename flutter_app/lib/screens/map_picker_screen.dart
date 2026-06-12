@@ -16,7 +16,7 @@ class MapPickerScreen extends StatefulWidget {
 class _MapPickerScreenState extends State<MapPickerScreen> {
   LatLng? _currentCenter;
   final MapController _mapController = MapController();
-  bool _isSatellite = false;
+  int _mapType = 0; // 0: OSM, 1: Google Street, 2: Google Satellite
   bool _isPopping = false;
 
   @override
@@ -40,6 +40,57 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     }
   }
 
+  void _showPasteLinkDialog() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('วางลิงก์จาก Google Maps'),
+        content: TextField(
+          controller: ctrl,
+          decoration: const InputDecoration(
+            hintText: 'วางลิงก์ที่นี่...',
+            helperText: 'ระบบจะดึงพิกัดจากลิงก์ให้อัตโนมัติ',
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('ยกเลิก')),
+          FilledButton(
+            onPressed: () {
+              final coords = _extractCoords(ctrl.text.trim());
+              Navigator.pop(ctx);
+              if (coords != null) {
+                _mapController.move(coords, 16);
+                setState(() => _currentCenter = coords);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ไม่พบพิกัดในลิงก์นี้')));
+              }
+            },
+            child: const Text('ตกลง'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  LatLng? _extractCoords(String url) {
+    try {
+      final patterns = [
+        RegExp(r'query=([-\d.]+),([-\d.]+)'),
+        RegExp(r'@([-\d.]+),([-\d.]+)'),
+        RegExp(r'[?&]q=([-\d.]+),([-\d.]+)'),
+      ];
+      for (final p in patterns) {
+        final match = p.firstMatch(url);
+        if (match != null) {
+          return LatLng(double.parse(match.group(1)!), double.parse(match.group(2)!));
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   void _confirmSelection() {
     if (_isPopping) return;
     setState(() => _isPopping = true);
@@ -55,12 +106,21 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('ลากแผนที่เพื่อปักหมุด'),
+          title: const Text('ปักหมุดตำแหน่ง'),
           actions: [
             IconButton(
-              icon: Icon(_isSatellite ? Icons.map : Icons.satellite_alt),
-              onPressed: () => setState(() => _isSatellite = !_isSatellite),
-              tooltip: _isSatellite ? 'สลับเป็นแผนที่ปกติ' : 'สลับเป็นภาพถ่ายดาวเทียม',
+              icon: const Icon(Icons.link, color: Colors.blue),
+              onPressed: _showPasteLinkDialog,
+              tooltip: 'วางลิงก์แผนที่',
+            ),
+            PopupMenuButton<int>(
+              icon: const Icon(Icons.layers),
+              onSelected: (val) => setState(() => _mapType = val),
+              itemBuilder: (ctx) => [
+                const PopupMenuItem(value: 0, child: Text('แผนที่ปกติ (OSM)')),
+                const PopupMenuItem(value: 1, child: Text('Google Maps (Street)')),
+                const PopupMenuItem(value: 2, child: Text('Google Maps (Satellite)')),
+              ],
             ),
             TextButton(
               onPressed: _confirmSelection,
@@ -81,16 +141,18 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
               ),
               children: [
                 TileLayer(
-                  urlTemplate: _isSatellite 
-                    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-                    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  urlTemplate: _mapType == 2
+                    ? 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}' // Google Satellite Hybrid
+                    : _mapType == 1
+                      ? 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}' // Google Street
+                      : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName: 'com.disability_app.app',
                 ),
                 RichAttributionWidget(
                   attributions: [
                     TextSourceAttribution(
-                      'OpenStreetMap contributors',
-                      onTap: () => launchUrl(Uri.parse('https://openstreetmap.org/copyright')),
+                      _mapType > 0 ? 'Google Maps' : 'OpenStreetMap contributors',
+                      onTap: () => launchUrl(Uri.parse(_mapType > 0 ? 'https://www.google.com/help/terms_maps/' : 'https://openstreetmap.org/copyright')),
                     ),
                   ],
                 ),
