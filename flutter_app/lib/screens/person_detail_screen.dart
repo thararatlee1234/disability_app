@@ -121,26 +121,76 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   }
 
   Future<void> _openMapPicker() async {
-    LatLng? initial;
-    if (person.latitude != null && person.latitude!.isNotEmpty) {
-      try {
-        initial = LatLng(double.parse(person.latitude!), double.parse(person.longitude!));
-      } catch (_) {}
-    }
-
-    final LatLng? picked = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => MapPickerScreen(initialPosition: initial)),
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('เลือกวิธีปักหมุด'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'picker'),
+            child: const Row(
+              children: [
+                Icon(Icons.map, color: Colors.teal),
+                SizedBox(width: 12),
+                Text('เลือกในแอป (แผนที่ OSM)'),
+              ],
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 'google'),
+            child: const Row(
+              children: [
+                Icon(Icons.open_in_new, color: Colors.blue),
+                SizedBox(width: 12),
+                Text('ปักหมุดใน Google Maps (ภายนอก)'),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
 
-    if (picked != null) {
-      final lat = double.parse(picked.latitude.toStringAsFixed(10));
-      final lng = double.parse(picked.longitude.toStringAsFixed(10));
-      await _updateFields({
-        'latitude': lat,
-        'longitude': lng,
-        'map_url': 'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
-      });
+    if (action == 'picker') {
+      LatLng? initial;
+      if (person.latitude != null && person.latitude!.isNotEmpty) {
+        try {
+          initial = LatLng(double.parse(person.latitude!), double.parse(person.longitude!));
+        } catch (_) {}
+      }
+
+      final LatLng? picked = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => MapPickerScreen(initialPosition: initial)),
+      );
+
+      if (picked != null) {
+        final lat = double.parse(picked.latitude.toStringAsFixed(10));
+        final lng = double.parse(picked.longitude.toStringAsFixed(10));
+        await _updateFields({
+          'latitude': lat,
+          'longitude': lng,
+          'map_url': 'https://www.google.com/maps/search/?api=1&query=$lat,$lng',
+        });
+      }
+    } else if (action == 'google') {
+      // Open Google Maps search page or current location
+      String url = 'https://www.google.com/maps';
+      if (person.latitude != null && person.latitude!.isNotEmpty) {
+        url = 'https://www.google.com/maps/search/?api=1&query=${person.latitude},${person.longitude}';
+      }
+      
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('เมื่อปักหมุดใน Google Maps เสร็จแล้ว ให้คัดลอกลิงก์มาวางในช่อง "ลิงก์ Google Maps"'),
+              duration: Duration(seconds: 10),
+            ),
+          );
+        }
+      }
     }
   }
 
