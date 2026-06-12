@@ -39,9 +39,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     setState(() => isLoadingChecks = true);
     try {
       final checks = await api.fetchMedicalChecks(person.id);
+      final updatedPerson = await api.fetchPerson(person.id);
       if (mounted) {
         setState(() {
           medicalChecks = checks;
+          person = updatedPerson;
           isLoadingChecks = false;
         });
       }
@@ -614,6 +616,36 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                       'เลขบัตรประชาชน: ${person.citizenId}',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: person.isCheckedThisYear ? Colors.green.shade100 : Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: person.isCheckedThisYear ? Colors.green : Colors.orange),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            person.isCheckedThisYear ? Icons.check_circle : Icons.warning_amber_rounded,
+                            size: 16,
+                            color: person.isCheckedThisYear ? Colors.green.shade900 : Colors.orange.shade900,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            person.isCheckedThisYear 
+                              ? 'ตรวจแล้วปีนี้ (${person.latestCheckDateThisYear ?? ''})' 
+                              : 'ยังไม่ได้ตรวจในปีนี้',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: person.isCheckedThisYear ? Colors.green.shade900 : Colors.orange.shade900,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -660,7 +692,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                           ElevatedButton.icon(
                             onPressed: _openMapPicker,
                             icon: const Icon(Icons.pin_drop),
-                            label: const Text('ปักหมุด'),
+                            label: const Text('ปักหมุด', style: TextStyle(fontWeight: FontWeight.bold)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.teal,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            ),
                           ),
                         ],
                       ),

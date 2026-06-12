@@ -1,6 +1,8 @@
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin
+from django.utils import timezone
+from django.utils.html import format_html
 from .models import MedicalCheck, MedicalCheckPhoto, PersonWithDisability
 
 
@@ -9,14 +11,32 @@ def is_rose_admin(request):
 
 @admin.register(PersonWithDisability)
 class PersonAdmin(admin.ModelAdmin):
-    list_display = ('full_name','owner','citizen_id','disability_type','subdistrict','district','province','phone')
-    search_fields = ('first_name','last_name','citizen_id','phone','province','district','subdistrict','owner__username')
-    list_filter = ('province','district','subdistrict','disability_type')
+    list_display = ('full_name', 'owner', 'citizen_id', 'check_status_this_year', 'subdistrict', 'district', 'province', 'phone')
+    search_fields = ('first_name', 'last_name', 'citizen_id', 'phone', 'province', 'district', 'subdistrict', 'owner__username')
+    list_filter = ('province', 'district', 'subdistrict', 'disability_type')
+    inlines = [] # Will be set below
+
+    def check_status_this_year(self, obj):
+        now = timezone.now()
+        check = obj.medical_checks.filter(check_date__year=now.year).order_by('-check_date').first()
+        if check:
+            return format_html('<span style="color: green; font-weight: bold;">ตรวจแล้ว ({})</span>', check.check_date)
+        return format_html('<span style="color: orange;">ยังไม่ตรวจ</span>')
+    check_status_this_year.short_description = 'สถานะการตรวจปีนี้'
 
 
 class MedicalCheckPhotoInline(admin.TabularInline):
     model = MedicalCheckPhoto
     extra = 0
+
+
+class MedicalCheckInline(admin.TabularInline):
+    model = MedicalCheck
+    extra = 1
+    show_change_link = True
+
+
+PersonAdmin.inlines = [MedicalCheckInline]
 
 
 @admin.register(MedicalCheck)

@@ -18,43 +18,6 @@ class CaseInsensitiveTokenObtainPairSerializer(TokenObtainPairSerializer):
         return super().validate(attrs)
 
 
-class PersonSerializer(serializers.ModelSerializer):
-    full_name = serializers.ReadOnlyField()
-    photo = serializers.ImageField(required=False, allow_null=True)
-    is_geocoded = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = PersonWithDisability
-        fields = '__all__'
-        read_only_fields = ['owner']
-
-    def get_is_geocoded(self, obj):
-        if isinstance(obj.raw_data, dict):
-            return obj.raw_data.get('is_geocoded', False)
-        return False
-
-    def validate(self, attrs):
-        map_url = attrs.get('map_url')
-        lat = attrs.get('latitude')
-        lng = attrs.get('longitude')
-
-        if map_url and (lat is None or lng is None):
-            import re
-            # Extract from @lat,lng
-            m = re.search(r'@([-\d.]+),([-\d.]+)', map_url)
-            if not m:
-                # Extract from query=lat,lng or q=lat,lng
-                m = re.search(r'[?&](?:query|q)=([-\d.]+),([-\d.]+)', map_url)
-            
-            if m:
-                if lat is None:
-                    attrs['latitude'] = m.group(1)
-                if lng is None:
-                    attrs['longitude'] = m.group(2)
-        
-        return attrs
-
-
 class MedicalCheckPhotoSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
 
@@ -94,7 +57,10 @@ class MedicalCheckSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         request = self.context.get('request')
+        print(f"DEBUG: Creating MedicalCheck. User: {request.user if request else 'Unknown'}")
+        print(f"DEBUG: Validated Data: {validated_data}")
         files = request.FILES.getlist('photos') if request else []
+        print(f"DEBUG: Files count: {len(files)}")
         check = MedicalCheck.objects.create(**validated_data)
         for file in files:
             MedicalCheckPhoto.objects.create(medical_check=check, image=file)
@@ -115,3 +81,54 @@ class MedicalCheckSerializer(serializers.ModelSerializer):
                 MedicalCheckPhoto.objects.create(medical_check=instance, image=file)
         
         return instance
+
+
+class PersonSerializer(serializers.ModelSerializer):
+    full_name = serializers.ReadOnlyField()
+    photo = serializers.ImageField(required=False, allow_null=True)
+    is_geocoded = serializers.SerializerMethodField()
+    is_checked_this_year = serializers.SerializerMethodField()
+    latest_check_date_this_year = serializers.SerializerMethodField()
+    medical_checks = MedicalCheckSerializer(many=True, read_only=True)
+    
+    class Meta:
+        model = PersonWithDisability
+        fields = '__all__'
+        read_only_fields = ['owner']
+
+    def get_is_geocoded(self, obj):
+        if isinstance(obj.raw_data, dict):
+            return obj.raw_data.get('is_geocoded', False)
+        return False
+
+    def get_is_checked_this_year(self, obj):
+        from django.utils import timezone
+        now = timezone.now()
+        return obj.medical_checks.filter(check_date__year=now.year).exists()
+
+    def get_latest_check_date_this_year(self, obj):
+        from django.utils import timezone
+        now = timezone.now()
+        check = obj.medical_checks.filter(check_date__year=now.year).order_by('-check_date').first()
+        return check.check_date if check else None
+
+    def validate(self, attrs):
+        map_url = attrs.get('map_url')
+        lat = attrs.get('latitude')
+        lng = attrs.get('longitude')
+
+        if map_url and (lat is None or lng is None):
+            import re
+            # Extract from @lat,lng
+            m = re.search(r'@([-\d.]+),([-\d.]+)', map_url)
+            if not m:
+                # Extract from query=lat,lng or q=lat,lng
+                m = re.search(r'[?&](?:query|q)=([-\d.]+),([-\d.]+)', map_url)
+            
+            if m:
+                if lat is None:
+                    attrs['latitude'] = m.group(1)
+                if lng is None:
+                    attrs['longitude'] = m.group(2)
+        
+        return attrs

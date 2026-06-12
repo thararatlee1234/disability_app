@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MapPickerScreen extends StatefulWidget {
   final LatLng? initialPosition;
@@ -16,8 +16,8 @@ class MapPickerScreen extends StatefulWidget {
 class _MapPickerScreenState extends State<MapPickerScreen> {
   LatLng? _currentCenter;
   final MapController _mapController = MapController();
-  final FocusNode _focusNode = FocusNode();
   bool _isSatellite = false;
+  bool _isPopping = false;
 
   @override
   void initState() {
@@ -27,12 +27,6 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     if (widget.initialPosition == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _goToCurrentLocation());
     }
-  }
-
-  @override
-  void dispose() {
-    _focusNode.dispose();
-    super.dispose();
   }
 
   Future<void> _goToCurrentLocation() async {
@@ -47,25 +41,19 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
   }
 
   void _confirmSelection() {
+    if (_isPopping) return;
+    setState(() => _isPopping = true);
     Navigator.pop(context, _currentCenter);
   }
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false,
+      canPop: _isPopping,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _confirmSelection();
       },
-      child: KeyboardListener(
-        focusNode: _focusNode,
-        autofocus: true,
-        onKeyEvent: (event) {
-          if (event is KeyDownEvent && event.logicalKey == LogicalKeyboardKey.enter) {
-            _confirmSelection();
-          }
-        },
-        child: Scaffold(
+      child: Scaffold(
         appBar: AppBar(
           title: const Text('ลากแผนที่เพื่อปักหมุด'),
           actions: [
@@ -76,7 +64,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
             ),
             TextButton(
               onPressed: _confirmSelection,
-              child: const Text('ยืนยัน', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              child: const Text('ตกลง', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -96,50 +84,56 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
                   urlTemplate: _isSatellite 
                     ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
                     : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.disability_app',
+                  userAgentPackageName: 'com.disability_app.app',
+                ),
+                RichAttributionWidget(
+                  attributions: [
+                    TextSourceAttribution(
+                      'OpenStreetMap contributors',
+                      onTap: () => launchUrl(Uri.parse('https://openstreetmap.org/copyright')),
+                    ),
+                  ],
                 ),
               ],
             ),
             // Fixed Center Pin
             Center(
-              child: GestureDetector(
-                onDoubleTap: _confirmSelection,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 35),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'ดับเบิ้ลคลิก หรือ กด Enter เพื่อปักหมุด',
-                          style: TextStyle(color: Colors.white, fontSize: 10),
-                        ),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 35),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(20),
                       ),
-                      const Icon(Icons.location_on, size: 50, color: Colors.red),
-                    ],
-                  ),
+                      child: const Text(
+                        'เลื่อนแผนที่ให้หมุดอยู่ตำแหน่งที่ต้องการ แล้วกดกลับ',
+                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const Icon(Icons.location_on, size: 50, color: Colors.red),
+                  ],
                 ),
               ),
             ),
             // Bottom current location info
             Positioned(
-              bottom: 100,
+              bottom: 40,
               left: 20,
               right: 20,
               child: IgnorePointer(
                 child: Card(
                   color: Colors.white.withValues(alpha: 0.9),
+                  elevation: 4,
                   child: Padding(
-                    padding: const EdgeInsets.all(8.0),
+                    padding: const EdgeInsets.all(12.0),
                     child: Text(
                       'พิกัด: ${_currentCenter!.latitude.toStringAsFixed(6)}, ${_currentCenter!.longitude.toStringAsFixed(6)}',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                   ),
                 ),
@@ -151,7 +145,6 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
           onPressed: _goToCurrentLocation,
           tooltip: 'ตำแหน่งปัจจุบัน',
           child: const Icon(Icons.my_location),
-        ),
         ),
       ),
     );

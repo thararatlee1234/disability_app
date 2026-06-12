@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/person.dart';
 import '../services/api_service.dart';
 import 'person_detail_screen.dart';
@@ -21,17 +23,43 @@ class _AllPersonsMapScreenState extends State<AllPersonsMapScreen> {
   List<Person> filteredPersons = [];
   bool isLoading = true;
   bool _isSatellite = false;
+  LatLng? _myLocation;
 
   @override
   void initState() {
     super.initState();
     _fetchData();
+    _getCurrentLocation();
   }
 
   @override
   void dispose() {
     searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      
+      if (permission == LocationPermission.deniedForever) return;
+
+      Position position = await Geolocator.getCurrentPosition();
+      if (mounted) {
+        setState(() {
+          _myLocation = LatLng(position.latitude, position.longitude);
+        });
+      }
+    } catch (e) {
+      debugPrint('Error getting location: $e');
+    }
   }
 
   Future<void> _fetchData() async {
@@ -125,6 +153,15 @@ class _AllPersonsMapScreenState extends State<AllPersonsMapScreen> {
           ),
         ],
       ),
+      floatingActionButton: _myLocation != null ? FloatingActionButton(
+        onPressed: () {
+          if (_myLocation != null) {
+            mapController.move(_myLocation!, 15);
+          }
+        },
+        backgroundColor: Colors.white,
+        child: const Icon(Icons.my_location, color: Colors.teal),
+      ) : null,
     );
   }
 
@@ -185,16 +222,26 @@ class _AllPersonsMapScreenState extends State<AllPersonsMapScreen> {
       final pos = entry.key;
       final peopleAtPos = entry.value;
       final count = peopleAtPos.length;
+      final checkedCount = peopleAtPos.where((p) => p.isCheckedThisYear).length;
       
       // Determine color: blue if ALL at this position are geocoded
       final isAnyGps = peopleAtPos.any((p) => !p.isGeocoded);
       final markerColor = isAnyGps ? Colors.red : Colors.blue;
-      final labelColor = isAnyGps ? Colors.teal : Colors.blue.shade800;
+      
+      // Determine border color based on check status
+      Color labelBorderColor = isAnyGps ? Colors.teal : Colors.blue.shade800;
+      if (count == 1) {
+        labelBorderColor = peopleAtPos.first.isCheckedThisYear ? Colors.green : Colors.orange;
+      } else {
+        // For clusters, use green if everyone is checked, orange if none, teal/blue otherwise
+        if (checkedCount == count) labelBorderColor = Colors.green;
+        else if (checkedCount == 0) labelBorderColor = Colors.orange;
+      }
 
       return Marker(
         point: pos,
-        width: 150,
-        height: 80,
+        width: 160,
+        height: 110,
         alignment: Alignment.topCenter,
         child: GestureDetector(
           onTap: () {
@@ -213,14 +260,31 @@ class _AllPersonsMapScreenState extends State<AllPersonsMapScreen> {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
                   boxShadow: const [BoxShadow(blurRadius: 6, color: Colors.black26, offset: Offset(0, 2))],
-                  border: Border.all(color: labelColor, width: 2),
+                  border: Border.all(color: labelBorderColor, width: 2),
                 ),
-                child: Text(
-                  count == 1 ? peopleAtPos.first.fullName : '$count คน',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: labelColor),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      count == 1 ? peopleAtPos.first.fullName : '$count คน',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.black87),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      count == 1 
+                        ? (peopleAtPos.first.isCheckedThisYear 
+                            ? 'ตรวจแล้ว (${peopleAtPos.first.latestCheckDateThisYear ?? ''})' 
+                            : 'ยังไม่ตรวจ')
+                        : 'ตรวจแล้ว $checkedCount/$count',
+                      style: TextStyle(
+                        fontSize: 9, 
+                        fontWeight: FontWeight.bold, 
+                        color: (count == 1 ? peopleAtPos.first.isCheckedThisYear : checkedCount > 0) ? Colors.green : Colors.orange
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Icon(
@@ -234,6 +298,40 @@ class _AllPersonsMapScreenState extends State<AllPersonsMapScreen> {
         ),
       );
     }).toList();
+
+    // Add user location marker
+    if (_myLocation != null) {
+      markers.add(
+        Marker(
+          point: _myLocation!,
+          width: 60,
+          height: 60,
+          alignment: Alignment.topCenter,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.green,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'คุณ',
+                  style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const Icon(
+                Icons.person,
+                color: Colors.green,
+                size: 40,
+                shadows: [Shadow(blurRadius: 4, color: Colors.black38, offset: Offset(0, 2))],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
     LatLng initialCenter = const LatLng(13.7563, 100.5018);
     if (markers.isNotEmpty) {
@@ -251,7 +349,15 @@ class _AllPersonsMapScreenState extends State<AllPersonsMapScreen> {
           urlTemplate: _isSatellite 
             ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
             : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.example.disability_app',
+          userAgentPackageName: 'com.disability_app.app',
+        ),
+        RichAttributionWidget(
+          attributions: [
+            TextSourceAttribution(
+              'OpenStreetMap contributors',
+              onTap: () => launchUrl(Uri.parse('https://openstreetmap.org/copyright')),
+            ),
+          ],
         ),
         MarkerLayer(markers: markers),
       ],
@@ -274,6 +380,9 @@ class _AllPersonsMapScreenState extends State<AllPersonsMapScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _detailRow('ชื่อ-นามสกุล:', p.fullName),
+            const SizedBox(height: 8),
+            _detailRow('สถานะการตรวจปีนี้:', p.isCheckedThisYear ? 'ตรวจแล้ว' : 'ยังไม่ตรวจ', 
+              valueColor: p.isCheckedThisYear ? Colors.green : Colors.orange),
             const SizedBox(height: 8),
             _detailRow('เลขบัตรประชาชน:', p.citizenId),
             const SizedBox(height: 8),
@@ -304,12 +413,12 @@ class _AllPersonsMapScreenState extends State<AllPersonsMapScreen> {
     );
   }
 
-  Widget _detailRow(String label, String value) {
+  Widget _detailRow(String label, String value, {Color? valueColor}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.grey)),
-        Text(value.isEmpty ? '-' : value, style: const TextStyle(fontSize: 16)),
+        Text(value.isEmpty ? '-' : value, style: TextStyle(fontSize: 16, color: valueColor)),
       ],
     );
   }
@@ -341,7 +450,28 @@ class _AllPersonsMapScreenState extends State<AllPersonsMapScreen> {
                     leading: p.photo != null
                         ? CircleAvatar(backgroundImage: NetworkImage(p.photo!))
                         : const CircleAvatar(child: Icon(Icons.person)),
-                    title: Text(p.fullName),
+                    title: Row(
+                      children: [
+                        Expanded(child: Text(p.fullName)),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: p.isCheckedThisYear ? Colors.green.shade50 : Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: p.isCheckedThisYear ? Colors.green : Colors.orange),
+                          ),
+                          child: Text(
+                            p.isCheckedThisYear ? 'ตรวจแล้ว' : 'ยังไม่ตรวจ',
+                            style: TextStyle(
+                              fontSize: 9, 
+                              fontWeight: FontWeight.bold, 
+                              color: p.isCheckedThisYear ? Colors.green.shade800 : Colors.orange.shade800
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     subtitle: Text(p.disabilityType),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () async {

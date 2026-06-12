@@ -9,8 +9,8 @@ load_dotenv(BASE_DIR / '.env')
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-prod-key-replace-me')
 DEBUG = os.getenv('DJANGO_DEBUG', 'True') == 'True' # Default to True for local development
 
-# Allow local, ngrok, and PythonAnywhere hosts
-ALLOWED_HOSTS = os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,.pythonanywhere.com,*.ngrok-free.app').split(',')
+# Allow all hosts for development/ngrok
+ALLOWED_HOSTS = ['*']
 
 # Trust origins for CSRF
 if DEBUG:
@@ -99,4 +99,12 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': ('rest_framework.permissions.IsAuthenticatedOrReadOnly',),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
+}
+
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
 }

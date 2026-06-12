@@ -17,6 +17,8 @@ class Person {
   final String? longitude;
   final String mapUrl;
   final bool isGeocoded;
+  final bool isCheckedThisYear;
+  final String? latestCheckDateThisYear;
   final String? photo;
   final String notes;
   final Map<String, dynamic> rawData;
@@ -38,6 +40,8 @@ class Person {
     this.longitude,
     required this.mapUrl,
     this.isGeocoded = false,
+    this.isCheckedThisYear = false,
+    this.latestCheckDateThisYear,
     this.photo,
     required this.notes,
     required this.rawData,
@@ -66,6 +70,8 @@ class Person {
       longitude: json['longitude']?.toString(),
       mapUrl: json['map_url'] ?? '',
       isGeocoded: json['is_geocoded'] ?? false,
+      isCheckedThisYear: json['is_checked_this_year'] ?? false,
+      latestCheckDateThisYear: json['latest_check_date_this_year'],
       photo: photoUrl,
       notes: json['notes'] ?? '',
       rawData: json['raw_data'] ?? {},

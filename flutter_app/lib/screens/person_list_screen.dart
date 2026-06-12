@@ -14,6 +14,7 @@ import '../utils/file_download.dart';
 import 'login_screen.dart';
 import 'person_detail_screen.dart';
 import 'all_persons_map_screen.dart';
+import 'report_screen.dart';
 
 class PersonListScreen extends StatefulWidget {
   const PersonListScreen({super.key});
@@ -31,64 +32,30 @@ class PersonListScreen extends StatefulWidget {
       }
     }
 
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      if (context.mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('แจ้งเตือน'),
-            content: const Text(
-                'กรุณาเปิดบริการระบุตำแหน่ง (GPS) บนโทรศัพท์ของคุณเพื่อใช้งานระบบนำทาง'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('ตกลง')),
-            ],
-          ),
-        );
-      }
-      return;
-    }
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('การเข้าถึงตำแหน่งถูกปฏิเสธ')));
-        }
-        return;
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text(
-                'การเข้าถึงตำแหน่งถูกปฏิเสธอย่างถาวร กรุณาเปิดในการตั้งค่า')));
-      }
-      return;
-    }
-
     Uri url;
     if (mapLink.isNotEmpty) {
       url = Uri.parse(mapLink);
     } else {
+      // Use a more universal format for Google Maps directions
       url = Uri.parse(
-          'https://www.google.com/maps/dir/?api=1&destination=${p.latitude},${p.longitude}&travelmode=driving');
+          'https://www.google.com/maps/dir/?api=1&destination=${p.latitude},${p.longitude}');
     }
 
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    } else {
+    try {
+      // On Web, canLaunchUrl can be unreliable. For HTTPS links, it's safer to just attempt launching.
+      final launched = await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      );
+      
+      if (!launched && context.mounted) {
+        // Fallback for some browsers
+        await launchUrl(url, mode: LaunchMode.platformDefault);
+      }
+    } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('ไม่สามารถเปิดลิงก์แผนที่ได้')));
+            SnackBar(content: Text('ไม่สามารถเปิดแผนที่ได้: $e')));
       }
     }
   }
@@ -100,21 +67,80 @@ class PersonListScreen extends StatefulWidget {
 class _PersonListScreenState extends State<PersonListScreen> {
   final api = ApiService();
   final searchController = TextEditingController();
+  
+  // Advanced filters controllers
+  final provinceController = TextEditingController();
+  final districtController = TextEditingController();
+  final subdistrictController = TextEditingController();
+  final houseNoController = TextEditingController();
+  final villageNoController = TextEditingController();
+  
+  // Advanced filters state
+  String? selectedProvince;
+  String? selectedDistrict;
+  String? selectedSubdistrict;
+  
+  List<String> provinces = [];
+  List<String> districts = [];
+  List<String> subdistricts = [];
+
   late Future<List<Person>> future;
   final Set<int> _deletingIds = {};
   Timer? _debounce;
   bool _isImporting = false;
+  String _checkFilter = 'all'; // 'all', 'checked', 'unchecked'
+  bool _showAdvancedFilters = false;
 
   @override
   void initState() {
     super.initState();
-    future = api.fetchPersons();
+    search();
+    _loadFilterOptions();
+  }
+
+  Future<void> _loadFilterOptions() async {
+    try {
+      final all = await api.fetchPersons(all: true);
+      setState(() {
+        provinces = all.map((p) => p.province).where((s) => s.isNotEmpty).toSet().toList()..sort();
+        _updateDistricts(all);
+        _updateSubdistricts(all);
+      });
+    } catch (e) {
+      debugPrint('Error loading filters: $e');
+    }
+  }
+
+  void _updateDistricts(List<Person> all) {
+    districts = all
+        .where((p) => selectedProvince == null || p.province == selectedProvince)
+        .map((p) => p.district)
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+  }
+
+  void _updateSubdistricts(List<Person> all) {
+    subdistricts = all
+        .where((p) => (selectedProvince == null || p.province == selectedProvince) && 
+                      (selectedDistrict == null || p.district == selectedDistrict))
+        .map((p) => p.subdistrict)
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
     searchController.dispose();
+    provinceController.dispose();
+    districtController.dispose();
+    subdistrictController.dispose();
+    houseNoController.dispose();
+    villageNoController.dispose();
     super.dispose();
   }
 
@@ -151,6 +177,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
               content: Text(
                   'นำเข้าสำเร็จ: สร้างใหม่ ${res['created']}, อัปเดต ${res['updated']}, ข้าม ${res['skipped']}')),
         );
+        _loadFilterOptions();
         search();
       }
     } catch (e) {
@@ -225,8 +252,35 @@ class _PersonListScreenState extends State<PersonListScreen> {
 
   void search() {
     setState(() {
-      future = api.fetchPersons(search: searchController.text.trim());
+      future = api.fetchPersons(
+        search: searchController.text.trim(),
+        province: selectedProvince ?? '',
+        district: selectedDistrict ?? '',
+        subdistrict: selectedSubdistrict ?? '',
+        houseNo: houseNoController.text.trim(),
+        villageNo: villageNoController.text.trim(),
+      ).then((list) {
+        if (_checkFilter == 'checked') {
+          return list.where((p) => p.isCheckedThisYear).toList();
+        } else if (_checkFilter == 'unchecked') {
+          return list.where((p) => !p.isCheckedThisYear).toList();
+        }
+        return list;
+      });
     });
+  }
+
+  void _clearFilters() {
+    setState(() {
+      searchController.clear();
+      selectedProvince = null;
+      selectedDistrict = null;
+      selectedSubdistrict = null;
+      houseNoController.clear();
+      villageNoController.clear();
+      _checkFilter = 'all';
+    });
+    search();
   }
 
   void _onSearchChanged(String query) {
@@ -267,6 +321,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('ลบข้อมูลเรียบร้อยแล้ว')));
           search();
+          _loadFilterOptions();
         }
       } catch (e) {
         if (mounted) {
@@ -488,6 +543,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                         content: Text(isEdit
                             ? 'แก้ไขข้อมูลเรียบร้อยแล้ว'
                             : 'เพิ่มข้อมูลเรียบร้อยแล้ว')));
+                    _loadFilterOptions();
                     search();
                   }
                 } catch (e) {
@@ -518,6 +574,12 @@ class _PersonListScreenState extends State<PersonListScreen> {
             ),
           PopupMenuButton<String>(
             onSelected: (value) {
+              if (value == 'report') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ReportScreen()),
+                );
+              }
               if (value == 'import') {
                 _importExcel();
               }
@@ -530,6 +592,14 @@ class _PersonListScreenState extends State<PersonListScreen> {
             },
             tooltip: 'เมนูเพิ่มเติม',
             itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'report',
+                child: Row(children: [
+                  Icon(Icons.assignment, color: Colors.teal),
+                  SizedBox(width: 8),
+                  Text('รายงานการตรวจ')
+                ]),
+              ),
               const PopupMenuItem(
                 value: 'import',
                 child: Row(children: [
@@ -616,8 +686,185 @@ class _PersonListScreenState extends State<PersonListScreen> {
             ),
           ]),
         ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      FilterChip(
+                        label: const Text('ทั้งหมด'),
+                        selected: _checkFilter == 'all',
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() => _checkFilter = 'all');
+                            search();
+                          }
+                        },
+                        selectedColor: Colors.teal.shade100,
+                        checkmarkColor: Colors.teal,
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('ตรวจแล้ว'),
+                        selected: _checkFilter == 'checked',
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() => _checkFilter = 'checked');
+                            search();
+                          }
+                        },
+                        selectedColor: Colors.green.shade100,
+                        checkmarkColor: Colors.green,
+                      ),
+                      const SizedBox(width: 8),
+                      FilterChip(
+                        label: const Text('ยังไม่ตรวจ'),
+                        selected: _checkFilter == 'unchecked',
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() => _checkFilter = 'unchecked');
+                            search();
+                          }
+                        },
+                        selectedColor: Colors.orange.shade100,
+                        checkmarkColor: Colors.orange,
+                      ),
+                      const SizedBox(width: 16),
+                      ActionChip(
+                        avatar: Icon(_showAdvancedFilters ? Icons.expand_less : Icons.filter_list, size: 16),
+                        label: const Text('ตัวกรองที่อยู่ละเอียด'),
+                        onPressed: () {
+                          setState(() => _showAdvancedFilters = !_showAdvancedFilters);
+                        },
+                        backgroundColor: Colors.blue.shade50,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_showAdvancedFilters)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: selectedProvince,
+                        decoration: const InputDecoration(labelText: 'จังหวัด', isDense: true),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('ทั้งหมด')),
+                          ...provinces.map((s) => DropdownMenuItem(value: s, child: Text(s))),
+                        ],
+                        onChanged: (v) async {
+                          setState(() {
+                            selectedProvince = v;
+                            selectedDistrict = null;
+                            selectedSubdistrict = null;
+                          });
+                          final all = await api.fetchPersons(all: true);
+                          setState(() {
+                            _updateDistricts(all);
+                            _updateSubdistricts(all);
+                          });
+                          search();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: selectedDistrict,
+                        decoration: const InputDecoration(labelText: 'อำเภอ', isDense: true),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('ทั้งหมด')),
+                          ...districts.map((s) => DropdownMenuItem(value: s, child: Text(s))),
+                        ],
+                        onChanged: (v) async {
+                          setState(() {
+                            selectedDistrict = v;
+                            selectedSubdistrict = null;
+                          });
+                          final all = await api.fetchPersons(all: true);
+                          setState(() => _updateSubdistricts(all));
+                          search();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        value: selectedSubdistrict,
+                        decoration: const InputDecoration(labelText: 'ตำบล', isDense: true),
+                        items: [
+                          const DropdownMenuItem(value: null, child: Text('ทั้งหมด')),
+                          ...subdistricts.map((s) => DropdownMenuItem(value: s, child: Text(s))),
+                        ],
+                        onChanged: (v) {
+                          setState(() => selectedSubdistrict = v);
+                          search();
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: houseNoController,
+                        decoration: const InputDecoration(
+                          labelText: 'บ้านเลขที่', 
+                          isDense: true,
+                        ),
+                        onChanged: (v) => _onSearchChanged(v),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: villageNoController,
+                        decoration: const InputDecoration(
+                          labelText: 'หมู่ที่', 
+                          isDense: true,
+                          hintText: 'เช่น 1',
+                        ),
+                        onChanged: (v) => _onSearchChanged(v),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: _clearFilters, 
+                      child: const Text('ล้างตัวกรอง'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
         Expanded(
           child: FutureBuilder<List<Person>>(
+
             future: future,
             builder: (context, snapshot) {
               if (_isImporting) {
@@ -658,9 +905,33 @@ class _PersonListScreenState extends State<PersonListScreen> {
                           ? CircleAvatar(
                               backgroundImage: NetworkImage(p.photo!))
                           : const CircleAvatar(child: Icon(Icons.person)),
-                      title: Text(p.fullName,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(p.fullName,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold, fontSize: 16)),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: p.isCheckedThisYear ? Colors.green.shade100 : Colors.orange.shade100,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: p.isCheckedThisYear ? Colors.green : Colors.orange),
+                            ),
+                            child: Text(
+                              p.isCheckedThisYear 
+                                ? 'ตรวจแล้ว (${p.latestCheckDateThisYear ?? ''})' 
+                                : 'ยังไม่ได้ตรวจปีนี้',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: p.isCheckedThisYear ? Colors.green.shade900 : Colors.orange.shade900,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

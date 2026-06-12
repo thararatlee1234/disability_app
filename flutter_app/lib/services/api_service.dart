@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import '../models/medical_check.dart';
@@ -7,8 +8,19 @@ import '../models/person.dart';
 
 class ApiService {
   static const String serverHost = String.fromEnvironment('SERVER_HOST',
-      defaultValue: 'http://localhost:8000');
-  static const String baseUrl = '$serverHost/api';
+      defaultValue: kIsWeb ? '' : 'http://127.0.0.1:8000');
+  
+  static String get baseUrl {
+    if (serverHost.isEmpty) {
+      return '/api';
+    }
+    // Ensure no trailing slash in host
+    final host = serverHost.endsWith('/') 
+        ? serverHost.substring(0, serverHost.length - 1) 
+        : serverHost;
+    return '$host/api';
+  }
+
   static String? accessToken;
   static String? currentUsername;
 
@@ -48,15 +60,35 @@ class ApiService {
     currentUsername = null;
   }
 
-  Future<List<Person>> fetchPersons({String search = '', String citizenId = '', bool all = false}) async {
+  Future<List<Person>> fetchPersons({
+    String search = '',
+    String citizenId = '',
+    String province = '',
+    String district = '',
+    String subdistrict = '',
+    String address = '',
+    String houseNo = '',
+    String villageNo = '',
+    bool all = false,
+  }) async {
     final queryParams = <String, String>{};
     if (search.isNotEmpty) queryParams['search'] = search;
     if (citizenId.isNotEmpty) queryParams['citizen_id'] = citizenId;
+    if (province.isNotEmpty) queryParams['province'] = province;
+    if (district.isNotEmpty) queryParams['district'] = district;
+    if (subdistrict.isNotEmpty) queryParams['subdistrict'] = subdistrict;
+    if (address.isNotEmpty) queryParams['address'] = address;
+    if (houseNo.isNotEmpty) queryParams['house_no'] = houseNo;
+    if (villageNo.isNotEmpty) queryParams['village_no'] = villageNo;
     if (all) queryParams['all'] = 'true';
 
     final uri = Uri.parse('$baseUrl/persons/')
         .replace(queryParameters: queryParams.isEmpty ? null : queryParams);
     final res = await http.get(uri, headers: _authHeaders);
+    if (res.statusCode == 401) {
+      logout();
+      throw Exception('เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่');
+    }
     if (res.statusCode != 200) {
       throw Exception('โหลดข้อมูลไม่สำเร็จ: ${res.statusCode}');
     }
@@ -65,6 +97,15 @@ class ApiService {
         ? body['results'] as List
         : body as List;
     return list.map((e) => Person.fromJson(e)).toList();
+  }
+
+  Future<Person> fetchPerson(int id) async {
+    final uri = Uri.parse('$baseUrl/persons/$id/');
+    final res = await http.get(uri, headers: _authHeaders);
+    if (res.statusCode != 200) {
+      throw Exception('โหลดข้อมูลไม่สำเร็จ: ${res.statusCode}');
+    }
+    return Person.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
   }
 
   Future<Person?> findByCitizenId(String citizenId) async {
@@ -270,6 +311,34 @@ class ApiService {
   Future<Uint8List> downloadReport() async {
     final res = await http.get(Uri.parse('$baseUrl/export-excel/'),
         headers: _authHeaders);
+    if (res.statusCode != 200) {
+      throw Exception('ดาวน์โหลดรายงานไม่สำเร็จ: ${res.statusCode}');
+    }
+    return res.bodyBytes;
+  }
+
+  Future<Map<String, List<Person>>> fetchCheckReport(String startDate, String endDate) async {
+    final uri = Uri.parse('$baseUrl/check-report/')
+        .replace(queryParameters: {'start_date': startDate, 'end_date': endDate});
+    final res = await http.get(uri, headers: _authHeaders);
+    if (res.statusCode != 200) {
+      String message = 'โหลดรายงานไม่สำเร็จ: ${res.statusCode}';
+      try {
+        final body = jsonDecode(utf8.decode(res.bodyBytes));
+        message = body['detail'] ?? message;
+      } catch (_) {}
+      throw Exception(message);
+    }
+    final body = jsonDecode(utf8.decode(res.bodyBytes));
+    final checked = (body['checked'] as List).map((e) => Person.fromJson(e)).toList();
+    final unchecked = (body['unchecked'] as List).map((e) => Person.fromJson(e)).toList();
+    return {'checked': checked, 'unchecked': unchecked};
+  }
+
+  Future<Uint8List> downloadCheckReport(String startDate, String endDate) async {
+    final uri = Uri.parse('$baseUrl/export-check-report/')
+        .replace(queryParameters: {'start_date': startDate, 'end_date': endDate});
+    final res = await http.get(uri, headers: _authHeaders);
     if (res.statusCode != 200) {
       throw Exception('ดาวน์โหลดรายงานไม่สำเร็จ: ${res.statusCode}');
     }
