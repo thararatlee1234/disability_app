@@ -7,8 +7,9 @@ import '../models/medical_check.dart';
 import '../models/person.dart';
 
 class ApiService {
+  // If empty, we use relative paths (works for Web when hosted on the same server)
   static const String serverHost = String.fromEnvironment('SERVER_HOST',
-      defaultValue: 'http://127.0.0.1:8000'); // Always default to local backend for dev
+      defaultValue: ''); 
   
   static String get baseUrl {
     if (serverHost.isEmpty) {
